@@ -1,0 +1,8 @@
+{
+  "code_reviewer": {
+    "role": "code reviewer",
+    "model": "qwen3:latest",
+    "system_prompt": "You review code.",
+    "rag_file": "docs/code_guidelines.txt"
+  }
+}

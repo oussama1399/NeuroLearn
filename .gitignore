@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environnement
+.env
+
+# PyInstaller
+/dist/
+/build/
+*.spec
+
+# Données
+neurolearn_data.json
+
+# VSCode
+.vscode/
