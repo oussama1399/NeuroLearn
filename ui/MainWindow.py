@@ -39,23 +39,15 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("NeuroLearn")
         self.resize(1100, 720)
 
+        self._status_bar = QStatusBar(self)
+        self.setStatusBar(self._status_bar)
+
         # Ajout de la mention d'auteur
         author_label = QLabel("Made by Kaddouri Oussama")
         author_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
         author_label.setStyleSheet("color: #888; font-size: 12px; margin: 0 8px 4px 0;")
         self._status_bar.addPermanentWidget(author_label)
 
-        self._datastore = JSONDataStore()
-        self._current_pdf_name: Optional[str] = None
-        self._current_summary: Optional[str] = None
-        self._current_quiz: Optional[Dict[str, List[Dict[str, Any]]]] = None
-        self._current_flashcards: Optional[Dict[str, List[Dict[str, Any]]]] = None
-        self._generation_error = False
-
-        self.worker_thread: QThread | None = None
-        self.worker: GenerationWorker | None = None
-        self._status_bar = QStatusBar(self)
-        self.setStatusBar(self._status_bar)
         self._status_message = QLabel("Prêt")
         self._status_message.setObjectName("statusMessage")
         self._progress = QProgressBar()
@@ -67,6 +59,15 @@ class MainWindow(QMainWindow):
         self._status_bar.addWidget(self._status_message)
         self._status_bar.addPermanentWidget(self._progress)
 
+        self._datastore = JSONDataStore()
+        self._current_pdf_name: Optional[str] = None
+        self._current_summary: Optional[str] = None
+        self._current_quiz: Optional[Dict[str, List[Dict[str, Any]]]] = None
+        self._current_flashcards: Optional[Dict[str, List[Dict[str, Any]]]] = None
+        self._generation_error = False
+
+        self.worker_thread: QThread | None = None
+        self.worker: GenerationWorker | None = None
         self._build_ui()
         self._connect_signals()
         self._connect_history_signals()
