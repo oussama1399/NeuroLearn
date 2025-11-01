@@ -3,6 +3,10 @@
 ## Description
 NeuroLearn is a modern study application powered by PyQt6 and Google Gemini. It supports Markdown rendering, dark Fluent design, flashcards, quizzes, and course history. You can use it for interactive learning, course review, and knowledge management.
 
+---
+**Made by Kaddouri Oussama**
+---
+
 ## Installation
 
 1. **Clone the repository**

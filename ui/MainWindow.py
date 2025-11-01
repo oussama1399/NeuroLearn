@@ -39,6 +39,12 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("NeuroLearn")
         self.resize(1100, 720)
 
+        # Ajout de la mention d'auteur
+        author_label = QLabel("Made by Kaddouri Oussama")
+        author_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
+        author_label.setStyleSheet("color: #888; font-size: 12px; margin: 0 8px 4px 0;")
+        self._status_bar.addPermanentWidget(author_label)
+
         self._datastore = JSONDataStore()
         self._current_pdf_name: Optional[str] = None
         self._current_summary: Optional[str] = None
