@@ -73,6 +73,16 @@ class JSONDataStore:
                 return course
         return None
 
+    def delete_course(self, course_id: str) -> bool:
+        """Delete a course by its ID. Returns True if deleted, False if not found."""
+        courses = self._data.get("courses", [])
+        for i, course in enumerate(courses):
+            if course.get("id") == course_id:
+                courses.pop(i)
+                self._save_data()
+                return True
+        return False
+
     def _load_data(self) -> None:
         if not self._storage_path.exists():
             self._save_data()

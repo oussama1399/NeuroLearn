@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
     QWidget,
+    QSizePolicy,  # Ajout ici
 )
 
 
@@ -29,8 +30,10 @@ class FlashcardWidget(QWidget):
 
         self.card_frame = QFrame()
         self.card_frame.setObjectName("flashcardFrame")
-        self.card_frame.setMinimumSize(640, 400)
-        self.card_frame.setMaximumWidth(900)
+        # Suppression des tailles fixes pour adaptation automatique
+        # self.card_frame.setMinimumSize(640, 400)
+        # self.card_frame.setMaximumWidth(900)
+        self.card_frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.card_frame.setCursor(Qt.CursorShape.PointingHandCursor)
         self.card_frame.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.card_frame.installEventFilter(self)

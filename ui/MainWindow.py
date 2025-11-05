@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Union
+import os
 
 from PyQt6.QtCore import Qt, QThread
 from PyQt6.QtGui import QIcon
@@ -20,12 +21,16 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QStatusBar,
     QTabWidget,
-    QTextEdit,
+    QTextBrowser,
     QVBoxLayout,
     QWidget,
+    QInputDialog,
+    QLineEdit,
+    QDialog,
+    QSpinBox,
 )
 
-from logic.GenerationWorker import GenerationWorker
+from utils.generation import GenerationWorker
 from ui.FlashcardWidget import FlashcardWidget
 from ui.QuizWidget import QuizWidget
 from utils.json_datastore import JSONDataStore
@@ -109,6 +114,11 @@ class MainWindow(QMainWindow):
         self.history_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         history_layout.addWidget(self.history_list, stretch=1)
 
+        self.delete_button = QPushButton("Supprimer le cours sélectionné")
+        self.delete_button.setObjectName("deleteButton")
+        self.delete_button.setEnabled(False)
+        history_layout.addWidget(self.delete_button)
+
         self.history_empty_label = QLabel("Aucun cours enregistré pour le moment.")
         self.history_empty_label.setObjectName("historyEmpty")
         self.history_empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -120,7 +130,7 @@ class MainWindow(QMainWindow):
         self.tabs.setObjectName("contentTabs")
         content_layout.addWidget(self.tabs, stretch=1)
 
-        self.summary_edit = QTextEdit()
+        self.summary_edit = QTextBrowser()
         self.summary_edit.setReadOnly(True)
         self.summary_edit.setObjectName("summaryArea")
         summary_container = QWidget()
@@ -153,6 +163,14 @@ class MainWindow(QMainWindow):
         flashcard_tab_layout.addWidget(self.flashcard_widget, alignment=Qt.AlignmentFlag.AlignCenter)
         self.tabs.addTab(flashcard_tab, "Flashcards")
 
+        # Bouton Paramètres dans le coin en bas à droite
+        self.settings_button = QPushButton("⚙")
+        self.settings_button.setFixedSize(40, 40)
+        self.settings_button.setObjectName("settingsButton")
+        self.settings_button.setToolTip("Paramètres")
+        self.settings_button.clicked.connect(self._open_settings_dialog)
+        self._status_bar.addPermanentWidget(self.settings_button)
+
         self._toggle_tabs(False)
         self._apply_tab_icons()
 
@@ -161,6 +179,7 @@ class MainWindow(QMainWindow):
 
     def _connect_history_signals(self) -> None:
         self.history_list.itemSelectionChanged.connect(self._on_history_selection_changed)
+        self.delete_button.clicked.connect(self._on_delete_clicked)
 
     def _on_load_clicked(self) -> None:
         pdf_path, _ = QFileDialog.getOpenFileName(
@@ -181,6 +200,10 @@ class MainWindow(QMainWindow):
             )
             return
 
+        # Récupérer le nombre de questions depuis les paramètres
+        default_questions = int(os.environ.get("DEFAULT_QUIZ_QUESTIONS", "10"))
+        num_questions = default_questions
+
         self._set_busy(True, "Génération en cours…")
         self.load_button.setEnabled(False)
         self._toggle_tabs(False)
@@ -194,7 +217,7 @@ class MainWindow(QMainWindow):
         self._generation_error = False
 
         self.worker_thread = QThread(self)
-        self.worker = GenerationWorker(pdf_path)
+        self.worker = GenerationWorker(pdf_path, num_questions=num_questions)
         self.worker.moveToThread(self.worker_thread)
 
         self.worker_thread.started.connect(self.worker.run)
@@ -371,6 +394,7 @@ class MainWindow(QMainWindow):
 
     def _on_history_selection_changed(self) -> None:
         selected_items = self.history_list.selectedItems()
+        self.delete_button.setEnabled(bool(selected_items))
         if not selected_items:
             return
 
@@ -398,3 +422,132 @@ class MainWindow(QMainWindow):
         self._toggle_tabs(True)
         self.tabs.setCurrentIndex(0)
         self._current_pdf_name = course.get("filename", "Cours")
+
+    def _on_delete_clicked(self) -> None:
+        selected_items = self.history_list.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Suppression", "Veuillez sélectionner un cours à supprimer.")
+            return
+
+        course_id = selected_items[0].data(Qt.ItemDataRole.UserRole)
+        if not course_id:
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Confirmer la suppression",
+            "Êtes-vous sûr de vouloir supprimer ce cours ? Cette action est irréversible.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            if self._datastore.delete_course(str(course_id)):
+                self._refresh_history_list()
+                self._clear_results()
+                self._toggle_tabs(False)
+                QMessageBox.information(self, "Suppression", "Le cours a été supprimé avec succès.")
+            else:
+                QMessageBox.warning(self, "Erreur", "Impossible de supprimer le cours.")
+
+    def _open_settings_dialog(self):
+        """Ouvre une fenêtre de dialogue pour les paramètres."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Paramètres")
+        dialog.setMinimumWidth(500)
+        dialog.setMinimumHeight(300)
+        
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+        
+        title = QLabel("⚙️ Paramètres de l'application")
+        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2563eb;")
+        layout.addWidget(title)
+        
+        # Section API Key
+        api_section = QLabel("Clé API Gemini")
+        api_section.setStyleSheet("font-size: 14px; font-weight: 600; margin-top: 12px;")
+        layout.addWidget(api_section)
+        
+        api_key_input = QLineEdit()
+        api_key_input.setPlaceholderText("Entrez votre clé API Google Gemini...")
+        api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        
+        # Charger la clé existante si elle existe
+        env_path = Path(__file__).resolve().parent.parent / ".env"
+        if env_path.exists():
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                if line.startswith("GOOGLE_API_KEY="):
+                    api_key_input.setText(line.split("=", 1)[1])
+                    break
+        
+        layout.addWidget(api_key_input)
+        
+        # Section Quiz
+        quiz_section = QLabel("Paramètres du Quiz")
+        quiz_section.setStyleSheet("font-size: 14px; font-weight: 600; margin-top: 12px;")
+        layout.addWidget(quiz_section)
+        
+        quiz_layout = QHBoxLayout()
+        quiz_label = QLabel("Nombre de questions par défaut:")
+        quiz_layout.addWidget(quiz_label)
+        
+        self.quiz_questions_spin = QSpinBox()
+        self.quiz_questions_spin.setRange(1, 50)
+        self.quiz_questions_spin.setValue(10)  # default
+        quiz_layout.addWidget(self.quiz_questions_spin)
+        layout.addLayout(quiz_layout)
+        
+        # Charger la valeur existante si elle existe
+        if env_path.exists():
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                if line.startswith("DEFAULT_QUIZ_QUESTIONS="):
+                    try:
+                        val = int(line.split("=", 1)[1])
+                        self.quiz_questions_spin.setValue(val)
+                    except ValueError:
+                        pass
+        
+        # Boutons
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        cancel_btn = QPushButton("Annuler")
+        cancel_btn.clicked.connect(dialog.reject)
+        button_layout.addWidget(cancel_btn)
+        
+        save_btn = QPushButton("Enregistrer")
+        save_btn.clicked.connect(lambda: self._save_settings_from_dialog(api_key_input.text(), self.quiz_questions_spin.value(), dialog))
+        button_layout.addWidget(save_btn)
+        
+        layout.addLayout(button_layout)
+        
+        dialog.exec()
+    
+    def _save_settings_from_dialog(self, api_key: str, quiz_questions: int, dialog: QDialog):
+        """Enregistre la clé API et les paramètres du quiz depuis la fenêtre de dialogue."""
+        api_key = api_key.strip()
+        if api_key:
+            # Enregistre la clé dans le fichier .env
+            env_path = Path(__file__).resolve().parent.parent / ".env"
+            lines = []
+            if env_path.exists():
+                lines = env_path.read_text(encoding="utf-8").splitlines()
+                # Supprime les anciennes lignes
+                lines = [l for l in lines if not l.startswith("GOOGLE_API_KEY=") and not l.startswith("DEFAULT_QUIZ_QUESTIONS=")]
+            lines.append(f"GOOGLE_API_KEY={api_key}")
+            lines.append(f"DEFAULT_QUIZ_QUESTIONS={quiz_questions}")
+            env_path.write_text("\n".join(lines), encoding="utf-8")
+            
+            # Mise à jour immédiate de la variable d'environnement pour utilisation sans redémarrage
+            import os
+            os.environ["GOOGLE_API_KEY"] = api_key
+            
+            QMessageBox.information(self, "Paramètres enregistrés", "Les paramètres ont été enregistrés et sont prêts à être utilisés.")
+            dialog.accept()
+        else:
+            QMessageBox.warning(self, "Champ vide", "Veuillez entrer une clé API valide.")
+
+    def _save_api_key(self):
+        """Ancienne méthode (conservée pour compatibilité mais non utilisée)."""
+        pass

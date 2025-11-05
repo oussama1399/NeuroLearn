@@ -20,11 +20,12 @@ class GenerationWorker(QObject):
     finished_quiz = pyqtSignal(list)
     finished_flashcards = pyqtSignal(list)
 
-    def __init__(self, pdf_path: str, model_name: Optional[str] = None) -> None:
+    def __init__(self, pdf_path: str, model_name: Optional[str] = None, num_questions: int = 10) -> None:
         super().__init__()
         self.pdf_path = pdf_path
         env_model = os.environ.get("GEMINI_MODEL")
         self.model_name = model_name or env_model or "gemini-2.5-flash"
+        self.num_questions = num_questions
 
     def run(self) -> None:
         try:
@@ -39,7 +40,7 @@ class GenerationWorker(QObject):
             summary = self._generate_summary(model, document_text)
             self.finished_summary.emit(summary)
 
-            quiz = self._generate_quiz(model, document_text)
+            quiz = self._generate_quiz(model, document_text, self.num_questions)
             self.finished_quiz.emit(quiz)
 
             flashcards = self._generate_flashcards(model, document_text)
@@ -87,11 +88,12 @@ class GenerationWorker(QObject):
             raise ValueError("Le modèle n'a renvoyé aucun résumé.")
         return summary_text
 
-    def _generate_quiz(self, model: genai.GenerativeModel, document_text: str) -> List[dict]:
+    def _generate_quiz(self, model: genai.GenerativeModel, document_text: str, num_questions: int = 10) -> List[dict]:
         prompt = (
-            "Génère un quiz en JSON basé sur le document ci-dessous.\n"
+            f"Génère un quiz en JSON basé sur le document ci-dessous. Le quiz doit contenir exactement {num_questions} questions.\n"
             "Tu dois renvoyer exactement le format suivant : {\"questions\": [{"
             "\"question\": \"...\", \"options\": [\"...\"], \"answer\": \"...\"}]}"
+
         )
         response = model.generate_content(
             [prompt, f"=== DOCUMENT ===\n{document_text}"],

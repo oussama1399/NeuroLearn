@@ -4,3 +4,4 @@ pypdf
 markdown
 requests
 pillow
+logic
