@@ -53,6 +53,11 @@ class MainWindow(QMainWindow):
         author_label.setStyleSheet("color: #888; font-size: 12px; margin: 0 8px 4px 0;")
         self._status_bar.addPermanentWidget(author_label)
 
+        # Version gratuite
+        version_label = QLabel("Version Gratuite")
+        version_label.setStyleSheet("color: #2563eb; font-size: 12px; font-weight: bold;")
+        self._status_bar.addWidget(version_label)
+
         self._status_message = QLabel("Prêt")
         self._status_message.setObjectName("statusMessage")
         self._progress = QProgressBar()
@@ -200,9 +205,29 @@ class MainWindow(QMainWindow):
             )
             return
 
-        # Récupérer le nombre de questions depuis les paramètres
-        default_questions = int(os.environ.get("DEFAULT_QUIZ_QUESTIONS", "10"))
-        num_questions = default_questions
+        # Vérifier le mode (freemium / premium)
+        is_premium = os.environ.get("PREMIUM", "0") in ("1", "true", "True")
+
+        # Limite du nombre de cours pour les utilisateurs gratuits
+        metadata = self._datastore.get_all_course_metadata()
+        if not is_premium and len(metadata) >= 3:
+            QMessageBox.information(
+                self,
+                "Limite atteinte",
+                (
+                    "Vous avez atteint la limite de 3 cours pour la version gratuite.\n\n"
+                    "Pour débloquer des cours supplémentaires, passez à la version premium (400 MAD).\n"
+                    "Contact : +212634350272"
+                ),
+            )
+            return
+
+        # Déterminer le nombre de questions : gratuit -> figé à 30, premium -> valeur paramétrable
+        if not is_premium:
+            num_questions = 30
+        else:
+            default_questions = int(os.environ.get("DEFAULT_QUIZ_QUESTIONS", "10"))
+            num_questions = default_questions
 
         self._set_busy(True, "Génération en cours…")
         self.load_button.setEnabled(False)
@@ -347,6 +372,18 @@ class MainWindow(QMainWindow):
         ):
             return
 
+        # Version gratuite : limite de 3 cours
+        existing_courses = self._datastore.get_all_course_metadata()
+        if len(existing_courses) >= 3:
+            QMessageBox.information(
+                self,
+                "Limite atteinte",
+                "La version gratuite permet maximum 3 cours.\n\n"
+                "Pour ajouter plus de cours (400 MAD) :\n"
+                "Contact: +212634350272",
+            )
+            return
+
         try:
             course_id = self._datastore.save_new_course(
                 filename=self._current_pdf_name,
@@ -483,49 +520,56 @@ class MainWindow(QMainWindow):
         
         layout.addWidget(api_key_input)
         
-        # Section Quiz
+        # Section Freemium / Mode
+        is_premium = os.environ.get("PREMIUM", "0") in ("1", "true", "True")
+
+        mode_label = QLabel("Mode : Premium" if is_premium else "Mode : Gratuit (Freemium)")
+        mode_label.setStyleSheet("font-size: 14px; font-weight: 600; margin-top: 12px;")
+        layout.addWidget(mode_label)
+
+        freemium_info = QLabel(
+            "• Pour les comptes gratuits : quiz figé à 30 questions\n"
+            "• Maximum 3 cours enregistrés\n\n"
+            "Upgrade (400 MAD) : Contactez +212634350272"
+        )
+        freemium_info.setStyleSheet("font-size: 12px; color: #6C757D;")
+        layout.addWidget(freemium_info)
+
+        # Paramètre du quiz (accessible seulement en premium)
         quiz_section = QLabel("Paramètres du Quiz")
         quiz_section.setStyleSheet("font-size: 14px; font-weight: 600; margin-top: 12px;")
         layout.addWidget(quiz_section)
-        
+
         quiz_layout = QHBoxLayout()
         quiz_label = QLabel("Nombre de questions par défaut:")
         quiz_layout.addWidget(quiz_label)
-        
+
         self.quiz_questions_spin = QSpinBox()
         self.quiz_questions_spin.setRange(1, 50)
-        self.quiz_questions_spin.setValue(10)  # default
+        self.quiz_questions_spin.setValue(int(os.environ.get("DEFAULT_QUIZ_QUESTIONS", "10")))
+        # Désactiver la modification pour les utilisateurs gratuits
+        self.quiz_questions_spin.setEnabled(is_premium)
         quiz_layout.addWidget(self.quiz_questions_spin)
         layout.addLayout(quiz_layout)
-        
-        # Charger la valeur existante si elle existe
-        if env_path.exists():
-            for line in env_path.read_text(encoding="utf-8").splitlines():
-                if line.startswith("DEFAULT_QUIZ_QUESTIONS="):
-                    try:
-                        val = int(line.split("=", 1)[1])
-                        self.quiz_questions_spin.setValue(val)
-                    except ValueError:
-                        pass
-        
+
         # Boutons
         button_layout = QHBoxLayout()
         button_layout.addStretch()
-        
+
         cancel_btn = QPushButton("Annuler")
         cancel_btn.clicked.connect(dialog.reject)
         button_layout.addWidget(cancel_btn)
-        
+
         save_btn = QPushButton("Enregistrer")
         save_btn.clicked.connect(lambda: self._save_settings_from_dialog(api_key_input.text(), self.quiz_questions_spin.value(), dialog))
         button_layout.addWidget(save_btn)
-        
+
         layout.addLayout(button_layout)
-        
+
         dialog.exec()
     
-    def _save_settings_from_dialog(self, api_key: str, quiz_questions: int, dialog: QDialog):
-        """Enregistre la clé API et les paramètres du quiz depuis la fenêtre de dialogue."""
+    def _save_api_key_from_dialog(self, api_key: str, dialog: QDialog):
+        """Enregistre la clé API depuis la fenêtre de dialogue."""
         api_key = api_key.strip()
         if api_key:
             # Enregistre la clé dans le fichier .env
@@ -533,20 +577,50 @@ class MainWindow(QMainWindow):
             lines = []
             if env_path.exists():
                 lines = env_path.read_text(encoding="utf-8").splitlines()
-                # Supprime les anciennes lignes
-                lines = [l for l in lines if not l.startswith("GOOGLE_API_KEY=") and not l.startswith("DEFAULT_QUIZ_QUESTIONS=")]
+                # Supprime les anciennes lignes GOOGLE_API_KEY
+                lines = [l for l in lines if not l.startswith("GOOGLE_API_KEY=")]
             lines.append(f"GOOGLE_API_KEY={api_key}")
-            lines.append(f"DEFAULT_QUIZ_QUESTIONS={quiz_questions}")
             env_path.write_text("\n".join(lines), encoding="utf-8")
             
             # Mise à jour immédiate de la variable d'environnement pour utilisation sans redémarrage
             import os
             os.environ["GOOGLE_API_KEY"] = api_key
             
-            QMessageBox.information(self, "Paramètres enregistrés", "Les paramètres ont été enregistrés et sont prêts à être utilisés.")
+            QMessageBox.information(self, "Clé API enregistrée", "La clé API a été enregistrée et est prête à être utilisée.")
             dialog.accept()
         else:
             QMessageBox.warning(self, "Champ vide", "Veuillez entrer une clé API valide.")
+
+    def _save_settings_from_dialog(self, api_key: str, quiz_questions: int, dialog: QDialog):
+        """Enregistre la clé API et le paramètre du quiz depuis la fenêtre de dialogue.
+
+        Note: si l'utilisateur est en mode gratuit, la valeur du nombre de questions
+        est ignorée (fixée à 30) mais nous enregistrons quand même la préférence.
+        """
+        api_key = api_key.strip()
+        # Sauvegarde dans .env (on conserve les autres variables si présentes)
+        env_path = Path(__file__).resolve().parent.parent / ".env"
+        lines = []
+        if env_path.exists():
+            lines = env_path.read_text(encoding="utf-8").splitlines()
+            # Supprime les anciennes lignes gérées
+            lines = [l for l in lines if not l.startswith("GOOGLE_API_KEY=") and not l.startswith("DEFAULT_QUIZ_QUESTIONS=")]
+
+        if api_key:
+            lines.append(f"GOOGLE_API_KEY={api_key}")
+            os.environ["GOOGLE_API_KEY"] = api_key
+
+        lines.append(f"DEFAULT_QUIZ_QUESTIONS={quiz_questions}")
+        os.environ["DEFAULT_QUIZ_QUESTIONS"] = str(quiz_questions)
+
+        try:
+            env_path.write_text("\n".join(lines), encoding="utf-8")
+        except OSError:
+            QMessageBox.warning(self, "Erreur", "Impossible d'écrire dans le fichier .env")
+            return
+
+        QMessageBox.information(self, "Paramètres enregistrés", "Les paramètres ont été enregistrés.")
+        dialog.accept()
 
     def _save_api_key(self):
         """Ancienne méthode (conservée pour compatibilité mais non utilisée)."""
